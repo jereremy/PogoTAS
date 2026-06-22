@@ -1002,17 +1002,14 @@ namespace PogoTAS
 								wasPaused = true;
 							}
 							Time.timeScale = 0f;
-							bool updatePhysics = true;
-							if (updatePhysics && originalFixedTimeStep > 0f)
+							if (originalFixedTimeStep > 0f)
 							{
 								float wantedSpeed = 1f;
-								float scaledFixedDeltaTime = originalFixedTimeStep * (1f / (wantedSpeed - Time.timeScale/*we already running at 1x speed so gotta - 1, this also means we can go less than 1*/));
+								float scaledFixedDeltaTime = originalFixedTimeStep * (1f / (wantedSpeed - Time.timeScale));
 								physicsTimeAccume += Mathf.Min(Time.unscaledDeltaTime, 0.25f);
 								while (physicsTimeAccume >= scaledFixedDeltaTime)
 								{
 									physicsTimeAccume -= scaledFixedDeltaTime;
-									//PhysicsUpdate();
-
 									if (tryingToRewind)
 									{
 										RestoreToTick(currentMoveTick - 1);
@@ -1021,8 +1018,8 @@ namespace PogoTAS
 									{
 										RestoreToTick(currentMoveTick + 1);
 									}
+									
 									PlayerMoveTickInfo tickInfo = playerMoveTickInfos[currentMoveTick];
-
 
 									PlayerStates originalState = (PlayerStates)currentState.GetValue(player);
 									currentState.SetValue(player, PlayerStates.Dead);
