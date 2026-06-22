@@ -16,5 +16,6 @@ its very jank but if you would like to use it follow this process
 6. If you began the tas from the first level and would like a clean time then goto the main menu and select another new game
 7. Once in game again or if you havent left, then press M to goto the start of the PlayBack
 8. Finally press W to unpause the playback and watch the TAS
+you have to restart the game if you want to make a new TAS
 
 if you run into glitches ¯\\\_(ツ)_/¯
