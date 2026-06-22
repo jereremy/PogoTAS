@@ -10,7 +10,7 @@ it references these binarys from the game
 its very jank but if you would like to use it follow this process
 1. Download MelonLoader and install it for Pogo3D
 2. Put PogoTAS.dll inside the new Pogo3D/pogo/Mods folder
-3. Open the game and start and adventure on an empty slot (New Game)
+3. Open the game and start an adventure on an empty slot (New Game)
 4. Once in game, play to where you would like while using the TAS features
 5. When you finish recording the TAS, switch to PlayBackMode with the DownArrow
 6. If you began the tas from the first level and would like a clean time then goto the main menu and select another new game
