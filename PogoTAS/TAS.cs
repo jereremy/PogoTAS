@@ -219,7 +219,7 @@ namespace PogoTAS
 			lastManager.TimeManager.OnPhysicsUpdate.RemoveAllListeners();
 			lastManager.TimeManager.OnPhysicsUpdate.AddListener(this.PrePhysicsUpdate);
 			lastManager.TimeManager.OnPhysicsUpdate.AddListener(CallOriginalPhysicsUpdate);
-			lastManager.TimeManager.OnPhysicsUpdate.AddListener(this.LatePhysicsUpdate);// doing this in late update
+			lastManager.TimeManager.OnPhysicsUpdate.AddListener(this.LatePhysicsUpdate);
 
 			playerFunctionsInitialised = true;
 		}
