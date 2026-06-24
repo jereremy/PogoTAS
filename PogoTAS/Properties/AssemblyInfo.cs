@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using MelonLoader;
 using PogoTAS; // The namespace of your mod class
 				 // ...
-[assembly: MelonInfo(typeof(TAS), "PogoTAS", "0.1.0", "stickrpg")]
+[assembly: MelonInfo(typeof(TAS), "PogoTAS", "0.1.1", "stickrpg")]
 [assembly: MelonGame("HEDGEWIZARDS", "pogo")]
 
 // General Information about an assembly is controlled through the following

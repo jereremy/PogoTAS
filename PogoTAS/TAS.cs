@@ -23,6 +23,12 @@ using MelonLoader.TinyJSON;
 using System.Collections;
 using Pogo.Levels.Loading;
 using Pogo.AssemblyLines;
+using DebugPhysics = PogoTAS.Physics;
+using Physics = UnityEngine.Physics;
+using Pogo.Gimmicks;
+using HarmonyLib;
+using UnityEngine.SceneManagement;
+using static MelonLoader.MelonLogger;
 
 namespace PogoTAS
 {
@@ -37,8 +43,43 @@ namespace PogoTAS
 		FakePause,
 		ManualShiftDownForDynamicObjects,
 		ManualShiftUpForDynamicObjects,
-		AnchorView
+		AnchorView,
+		MoreRadius,
+		LessRadius,
+		MoreHeight,
+		LessHeight,
+		MoreOffset,
+		LessOffset,
+		ForceHeadDown,
+		ProtectHead
 	}
+
+	/*[HarmonyPatch(typeof(LevelSceneLoader), "FinishLoading")]
+	public static class LevelSceneLoaderFinishLoadingPatch
+	{
+		[HarmonyPrefix]
+		public static void PreFix(LevelSceneLoader __instance)
+		{
+			if (__instance.CurrentlyNeeded)
+			{
+				TAS.Instance.SpecificLevelWasLoadedOrUnloaded(__instance.Level.BuildIndex, true);
+			}
+		}
+	}
+
+	[HarmonyPatch(typeof(LevelSceneLoader), "FinishUnloading")]
+	public static class LevelSceneLoaderFinishUnLoadingPatch
+	{
+		[HarmonyPrefix]
+		public static void PreFix(LevelSceneLoader __instance)
+		{
+			if (!__instance.CurrentlyNeeded)
+			{
+				TAS.Instance.SpecificLevelWasLoadedOrUnloaded(__instance.Level.BuildIndex, false);
+			}
+		}
+	}*/
+
 
 	public class TAS : MelonMod
 	{
@@ -51,8 +92,11 @@ namespace PogoTAS
 		bool manualPaused = false;
 		bool wasPaused = false;
 		bool isInGame = false;
+		//GameObject preGeneratedCapsuleColliderGameObject = null;
+		//CapsuleCollider preGeneratedCapsuleCollider = null;
 
 		PlayerController player = null;
+		OrbSafeMover playerOrbSafeMovers = null;
 		PogoGameManager lastManager = null;
 		LevelDescriptor startingLevel = null;
 		List<LevelSceneLoader> pogoLevelManagerCurrentLevelSceneLoaders = null;
@@ -137,10 +181,137 @@ namespace PogoTAS
 			TypeInfo assemblyLineEntryControllerTypeInfo = typeof(AssemblyLineEntryController).GetTypeInfo();
 			assemblyLineEntryControllerAnimatorField = assemblyLineEntryControllerTypeInfo.GetDeclaredField("animator");
 
+			//preGeneratedCapsuleColliderGameObject = new GameObject("preGeneratedCapsuleColliderGameObject", typeof(CapsuleCollider));
+			//preGeneratedCapsuleCollider = preGeneratedCapsuleColliderGameObject.GetComponent<CapsuleCollider>();
+
+			/*MethodInfo originalFinishLoadingMethod = typeof(LevelSceneLoader).GetTypeInfo().GetDeclaredMethod("FinishLoading");
+			MethodInfo prefixFinishLoadingHookMethod = typeof(TAS).GetTypeInfo().GetDeclaredMethod("FinishLoadingHook");
+
+			HarmonyInstance.Patch(originalFinishLoadingMethod, prefix: new HarmonyLib.HarmonyMethod(prefixFinishLoadingHookMethod));
+
+			MethodInfo originalFinishUnloadingMethod = typeof(LevelSceneLoader).GetTypeInfo().GetDeclaredMethod("FinishUnloading");
+			MethodInfo prefixFinishUnloadingHookMethod = typeof(TAS).GetTypeInfo().GetDeclaredMethod("FinishUnloadingHook");
+
+			HarmonyInstance.Patch(originalFinishUnloadingMethod, prefix: new HarmonyLib.HarmonyMethod(prefixFinishUnloadingHookMethod));*/
+
 			for (int i = 0; i < levelLoadTick.Length; i++)
 			{
 				levelLoadTick[i] = 0;
 			}
+			for (int i = 0; i < levelLoaded.Length; i++)
+			{
+				levelLoaded[i] = false;
+			}
+
+			SceneManager.sceneLoaded += SceneLoadedCallback;
+			SceneManager.sceneUnloaded += SceneUnLoadedCallback;
+			InitCapsule();
+		}
+
+		public void SceneLoadedCallback(Scene loadedScene, LoadSceneMode mode)
+		{
+			Instance.SpecificLevelWasLoadedOrUnloaded(loadedScene.buildIndex, true);
+		}
+		public void SceneUnLoadedCallback(Scene loadedScene)
+		{
+			Instance.SpecificLevelWasLoadedOrUnloaded(loadedScene.buildIndex, false);
+		}
+
+
+		/*public static void FinishLoadingHook(LevelSceneLoader loader)
+		{
+			if (loader.CurrentlyNeeded)
+			{
+				Instance.SpecificLevelWasLoadedOrUnloaded(loader.Level.BuildIndex, true);
+			}
+		}
+
+		public static void FinishUnloadingHook(LevelSceneLoader loader)
+		{
+			if (!loader.CurrentlyNeeded)
+			{
+				Instance.SpecificLevelWasLoadedOrUnloaded(loader.Level.BuildIndex, false);
+			}
+		}*/
+
+		private Vector3 capsuleTop = Vector3.zero;
+		private Vector3 capsuleBottom = Vector3.zero;
+
+		private float capsuleYOffset = 0.7f;
+		public float CapsuleYOffset
+		{
+			get { return capsuleYOffset; }
+			set
+			{
+				if (value != capsuleYOffset)
+				{
+					capsuleYOffset = value;
+					InitCapsule();
+				}
+			}
+		}
+
+		private float capsuleHeight = 1.375f;
+		public float CapsuleHeight
+		{
+			get { return capsuleHeight; }
+			set
+			{
+				if (value != capsuleHeight)
+				{
+					capsuleHeight = value;
+					InitCapsule();
+				}
+			}
+		}
+
+		private float capsuleRadius = .03f;
+		public float CapsuleRadius
+		{
+			get { return capsuleRadius; }
+			set
+			{
+				if (value != capsuleRadius)
+				{
+					capsuleRadius = value;
+					InitCapsule();
+				}
+			}
+		}
+		public void InitCapsule()
+		{
+			float distanceFromEnds = (CapsuleHeight - (CapsuleRadius * 2f)) * .5f;
+
+			capsuleTop = new Vector3(0f, distanceFromEnds + CapsuleYOffset, 0f);
+			capsuleBottom = new Vector3(0f, -distanceFromEnds + CapsuleYOffset, 0f);
+
+			//preGeneratedCapsuleCollider.radius = CapsuleRadius;
+			//preGeneratedCapsuleCollider.height = CapsuleHeight;
+			//preGeneratedCapsuleCollider.center = new Vector3(0f, CapsuleYOffset, 0f);
+		}
+
+		public bool CapsuleCast(Vector3 position, Vector3 direction, Quaternion rotation, float distance, out RaycastHit hit_out, bool debug_draw, bool doOverlaps, out Collider[] overlaps)
+		{
+			Vector3 translatedCapsuleTop = position + rotation * capsuleTop;
+			Vector3 translatedCapsuleBottom = position + rotation * capsuleBottom;
+
+			overlaps = null;
+
+			if (debug_draw)
+			{		
+				if (doOverlaps)
+				{
+					overlaps = DebugPhysics.OverlapCapsule(translatedCapsuleTop, translatedCapsuleBottom, CapsuleRadius, 1, QueryTriggerInteraction.Ignore, PreviewCondition.Both, drawDuration: Time.fixedDeltaTime, hitColor: Color.green, noHitColor: Color.yellow, drawDepth: false);
+				}
+
+				return DebugPhysics.CapsuleCast(translatedCapsuleTop, translatedCapsuleBottom, CapsuleRadius, direction, out hit_out, distance, 1, QueryTriggerInteraction.Ignore, PreviewCondition.Game, originalFixedTimeStep, hitColor: Color.red, noHitColor: Color.blue, drawDepth: false, CastDrawType.Complete) || (overlaps != null && overlaps.Length > 0);
+			}
+
+			if (doOverlaps)
+			{
+				overlaps = Physics.OverlapCapsule(translatedCapsuleTop, translatedCapsuleBottom, CapsuleRadius, 1, QueryTriggerInteraction.Ignore);
+			}
+			return Physics.CapsuleCast(translatedCapsuleTop, translatedCapsuleBottom, CapsuleRadius, direction, out hit_out, distance, 1, QueryTriggerInteraction.Ignore) || (overlaps != null && overlaps.Length > 0);
 		}
 
 		InputBinder lastBinder = null;
@@ -166,6 +337,18 @@ namespace PogoTAS
 				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.ManualShiftUpForDynamicObjects] = new KeyboardButton(current, Key.RightArrow);
 				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.AnchorView] = new KeyboardButton(current, Key.F);
 
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.MoreRadius] = new KeyboardButton(current, Key.Numpad9);
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.LessRadius] = new KeyboardButton(current, Key.Numpad7);
+
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.MoreHeight] = new KeyboardButton(current, Key.Numpad6);
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.LessHeight] = new KeyboardButton(current, Key.Numpad4);
+
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.MoreOffset] = new KeyboardButton(current, Key.Numpad3);
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.LessOffset] = new KeyboardButton(current, Key.Numpad1);
+
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.ForceHeadDown] = new KeyboardButton(current, Key.LeftShift);
+				InputManager.self.Binder.Keys[(KeyName)ExKeyNames.ProtectHead] = new KeyboardButton(current, Key.LeftCtrl);
+
 				lastKeyCount = (Enum.GetNames(typeof(KeyName)).Length - 1);
 				newKeyCount = (Enum.GetNames(typeof(KeyName)).Length - 1) + (Enum.GetNames(typeof(ExKeyNames)).Length - 1);
 				//keycount.SetValue((Enum.GetNames(typeof(KeyName)).Length - 1) + (Enum.GetNames(typeof(ExKeyNames)).Length - 1), InputManager.self.Binder);
@@ -173,22 +356,6 @@ namespace PogoTAS
 				lastBinder = InputManager.self.Binder;
 			}
 		}
-
-		public abstract class OverrideUnityEventBase : UnityEngine.Events.UnityEventBase
-		{
-			public void OverrideRemoveListener(object target, MethodInfo method)
-			{
-				RemoveListener(target, method);
-			}
-
-			protected override MethodInfo FindMethod_Impl(string name, Type targetObjType)
-			{
-				return UnityEngine.Events.UnityEventBase.GetValidMethodInfo(targetObjType, name, new Type[0]);
-			}
-			internal abstract object GetDelegate(object target, MethodInfo theFunction);
-
-		}
-
 
 		Action ActionPhysicsUpdate = null;
 		void CallOriginalPhysicsUpdate()
@@ -219,11 +386,10 @@ namespace PogoTAS
 			lastManager.TimeManager.OnPhysicsUpdate.RemoveAllListeners();
 			lastManager.TimeManager.OnPhysicsUpdate.AddListener(this.PrePhysicsUpdate);
 			lastManager.TimeManager.OnPhysicsUpdate.AddListener(CallOriginalPhysicsUpdate);
-			lastManager.TimeManager.OnPhysicsUpdate.AddListener(this.LatePhysicsUpdate);
+			lastManager.TimeManager.OnPhysicsUpdate.AddListener(this.LatePhysicsUpdate);// doing this in late update
 
 			playerFunctionsInitialised = true;
 		}
-
 
 		public void SetEyeAngles(PlayerController wishPlayer, Vector3 newAngles)
 		{
@@ -445,6 +611,30 @@ namespace PogoTAS
 			physicsTimeAccume = 0f;
 		}
 
+
+		void ProtectHead() 
+		{
+			bool forcingHeadDown = InputManager.CheckKey((KeyName)ExKeyNames.ForceHeadDown);
+			bool protectingHead = InputManager.CheckKey((KeyName)ExKeyNames.ProtectHead);
+
+			if (protectingHead || forcingHeadDown)
+			{
+				float startingPitch = Mathf.Clamp((player.EyeAngles.x + (forcingHeadDown ? 30f : 0f)), -89.9f, 89.9f);
+				float endingPitch = Mathf.Clamp((startingPitch - (forcingHeadDown ? 90f : 30f)), -89.9f, 89.9f);
+				for (float i = startingPitch; i >= endingPitch; i -= 1f)
+				{
+					float newPitch = Mathf.Clamp(i, -89.9f, 89.9f);
+
+					Quaternion currentRotation = Quaternion.Euler(player.PitchFrac * 1.5f * newPitch, player.EyeAngles.y, player.EyeAngles.z);
+					if (!CapsuleCast(player.PhysicsPosition, player.Velocity.normalized, currentRotation, player.Velocity.magnitude * originalFixedTimeStep, out RaycastHit outHit, false, true, out Collider[] outOverlaps))
+					{
+						SetEyeAngles(player, new Vector3(newPitch, player.EyeAngles.y, player.EyeAngles.z));					
+						break;
+					}
+				}
+			}
+		}
+
 		bool didPrePhysicsUpdate = false;
 		Vector3 prePos = Vector3.zero;
 		public void PrePhysicsUpdate()
@@ -454,6 +644,8 @@ namespace PogoTAS
 			{
 				if (recording)
 				{
+					ProtectHead();
+					//CapsuleCast(player.PhysicsPosition, player.Velocity.normalized, player.DesiredModelRotation, player.Velocity.magnitude * originalFixedTimeStep, out RaycastHit un1, true, false, out Collider[] un2);
 					if (currentMoveTick >= playerMoveTickInfos.Count)
 					{
 						currentMoveTick = playerMoveTickInfos.Count;
@@ -491,6 +683,7 @@ namespace PogoTAS
 				prePos = player.PhysicsPosition;
 
 				didPrePhysicsUpdate = true;
+
 			}
 
 		}
@@ -772,28 +965,36 @@ namespace PogoTAS
 				MelonCoroutines.Start(LevelLoadedTickOffsetRoutine(loadedLevelIndex, recording));				
 			}
 
-			if (lastPogoLevelManagerCurrentLevelSceneLoadersCount != pogoLevelManagerCurrentLevelSceneLoaders.Count)
+			/*if (lastPogoLevelManagerCurrentLevelSceneLoadersCount != pogoLevelManagerCurrentLevelSceneLoaders.Count)
 			{
 				lastPogoLevelManagerCurrentLevelSceneLoadersCount = pogoLevelManagerCurrentLevelSceneLoaders.Count;
 				for (int i = 0; i < lastPogoLevelManagerCurrentLevelSceneLoadersCount; i++)
 				{
 					if (pogoLevelManagerCurrentLevelSceneLoaders[i] != null)
 					{
-						if (pogoLevelManagerCurrentLevelSceneLoaders[i].CurrentLoadState == LevelSceneLoader.LoadStates.Loading)
+						if (pogoLevelManagerCurrentLevelSceneLoaders[i].CurrentLoadState == LevelSceneLoader.LoadStates.Loaded)
 						{
 							pogoLevelManagerCurrentLevelSceneLoaders[i].OnIdle.AddListener(SpecificLevelWasLoadedOrUnloaded(pogoLevelManagerCurrentLevelSceneLoaders[i].Level.BuildIndex, true));
 						}
-						else if (pogoLevelManagerCurrentLevelSceneLoaders[i].CurrentLoadState == LevelSceneLoader.LoadStates.Unloading)
+						else if (pogoLevelManagerCurrentLevelSceneLoaders[i].CurrentLoadState == LevelSceneLoader.LoadStates.NotLoaded)
 						{
 							pogoLevelManagerCurrentLevelSceneLoaders[i].OnIdle.AddListener(SpecificLevelWasLoadedOrUnloaded(pogoLevelManagerCurrentLevelSceneLoaders[i].Level.BuildIndex, false));
 						}
 					}
 				}
-			}	
+			}	*/
 		}
-		UnityAction SpecificLevelWasLoadedOrUnloaded(int levelBuildIndex, bool loadingIn)
+		public UnityAction SpecificLevelWasLoadedOrUnloaded(int levelBuildIndex, bool loadingIn)
 		{
 			Instance.levelLoaded[levelBuildIndex] = loadingIn;
+			if (loadingIn)
+			{
+				MelonLogger.Msg($"CB_levelLoaded: {levelBuildIndex}");
+			}
+			else
+			{
+				MelonLogger.Msg($"CB_levelUnLoaded: {levelBuildIndex}");
+			}
 			return null;
 		}
 		/*
@@ -804,6 +1005,8 @@ namespace PogoTAS
 			OffsetDynamicObjects(tickDelta, true);
 			MelonLogger.Msg("worked?");
 		}*/
+
+		int lastLoadedIndex = 0;
 		public IEnumerator LevelLoadedTickOffsetRoutine(int levelIndex, bool wasRecording)
 		{
 			yield return new WaitForEndOfFrame();
@@ -825,10 +1028,16 @@ namespace PogoTAS
 			{
 				if (levelLoaded[levelIndex])
 				{
-					levelLoadTick[levelIndex] = currentMoveTick;
-					levelLoaded[levelIndex] = false; // lol
+					if (levelIndex > lastLoadedIndex)
+					{
+						levelLoadTick[levelIndex] = currentMoveTick;
+					}
+
+					//levelLoaded[levelIndex] = false; // lol
 					FindAllStuff(true);
 					MelonLogger.Msg($"levelLoaded: {levelIndex}");
+
+					lastLoadedIndex = levelIndex;
 				}
 				else
 				{
@@ -888,6 +1097,8 @@ namespace PogoTAS
 					PogoGameManager.PogoInstance.OnLevelLoaded.RemoveListener(LevelFinishedLoading);
 					PogoGameManager.PogoInstance.OnLevelLoaded.AddListener(LevelFinishedLoading);				
 					player = PogoGameManager.PogoInstance.Player;
+					playerOrbSafeMovers = player.GetComponentInChildren<OrbSafeMover>();
+
 					startingLevel = null;
 				}
 				else if (player == null && playerFunctionsInitialised)
@@ -917,7 +1128,43 @@ namespace PogoTAS
 
 					if (player != null)
 					{
-						if (!manualPaused && Time.timeScale == 0f)
+						/*
+		MoreRadius,
+		LessRadius,
+		MoreHeight,
+		LessHeight,
+		MoreOffset,
+		LessOffset
+ */
+					/*	if (InputManager.CheckKeyDown((KeyName)ExKeyNames.MoreRadius))
+						{
+							CapsuleRadius += .01f;
+						}
+						if (InputManager.CheckKeyDown((KeyName)ExKeyNames.LessRadius))
+						{
+							CapsuleRadius -= .01f;
+						}
+
+						if (InputManager.CheckKeyDown((KeyName)ExKeyNames.MoreHeight))
+						{
+							CapsuleHeight += .01f;
+						}
+						if (InputManager.CheckKeyDown((KeyName)ExKeyNames.LessHeight))
+						{
+							CapsuleHeight -= .01f;
+						}
+
+						if (InputManager.CheckKeyDown((KeyName)ExKeyNames.MoreOffset))
+						{
+							CapsuleYOffset += .01f;
+						}
+						if (InputManager.CheckKeyDown((KeyName)ExKeyNames.LessOffset))
+						{
+							CapsuleYOffset -= .01f;
+						}*/
+						
+
+						if (recording && !manualPaused && Time.timeScale == 0f)
 						{
 							manualPaused = true;
 						}
@@ -942,6 +1189,15 @@ namespace PogoTAS
 								PogoGameManager.PogoInstance.LoadLevel(startingLevel);
 								RestoreToTick(0);
 							}
+
+							if (player.CurrentState != PlayerStates.Alive)
+							{
+								player.CurrentState = PlayerStates.Alive;
+								if (!manualPaused)
+								{
+									Time.timeScale = 1f;
+								}
+							}
 						}
 	
 						if (InputManager.CheckKeyDown((KeyName)ExKeyNames.FakePause))
@@ -952,6 +1208,7 @@ namespace PogoTAS
 							{
 								playerMoveTickInfos.RemoveRange(currentMoveTick + 1, (playerMoveTickInfos.Count) - (currentMoveTick + 1));
 							}
+							
 						}
 
 						LevelLoadedTickOffset();
@@ -975,41 +1232,52 @@ namespace PogoTAS
 							manualPaused = true;
 						}
 
-						if (InputManager.CheckKey((KeyName)ExKeyNames.AnchorView))
-						{
-							if (!viewWasAnchored)
-							{
-								viewWasAnchored = true;
-							}
-							player.CameraSwivelPoint.transform.rotation = originalViewRotation;
-							currentPredTicks = maxPredictionTicks;
-						}
-						else
-						{
-							originalViewRotation = player.CameraSwivelPoint.transform.rotation;
-							currentPredTicks = minPredictionTicks;
-							if (viewWasAnchored)
-							{							
-								viewWasAnchored = false;
-							}
-						}
+						bool viewIsAnchored = InputManager.CheckKey((KeyName)ExKeyNames.AnchorView);
+
 
 						if (manualPaused)
 						{
+							if (recording)
+							{
+								if (viewIsAnchored)
+								{
+									if (!viewWasAnchored)
+									{
+										viewWasAnchored = true;
+									}
+									player.CameraSwivelPoint.transform.rotation = originalViewRotation;
+								}
+								else
+								{
+									originalViewRotation = player.CameraSwivelPoint.transform.rotation;
+									if (viewWasAnchored)
+									{
+										viewWasAnchored = false;
+									}
+								}
+							}
+
 							if (!wasPaused)
 							{
 								RestoreToTick(currentMoveTick);				
 								wasPaused = true;
 							}
+
+
 							Time.timeScale = 0f;
-							if (originalFixedTimeStep > 0f)
+							bool updatePhysics = true;
+							if (updatePhysics && originalFixedTimeStep > 0f)
 							{
 								float wantedSpeed = 1f;
-								float scaledFixedDeltaTime = originalFixedTimeStep * (1f / (wantedSpeed - Time.timeScale));
+								float scaledFixedDeltaTime = originalFixedTimeStep * (1f / (wantedSpeed - Time.timeScale/*we already running at 1x speed so gotta - 1, this also means we can go less than 1*/));
 								physicsTimeAccume += Mathf.Min(Time.unscaledDeltaTime, 0.25f);
 								while (physicsTimeAccume >= scaledFixedDeltaTime)
 								{
 									physicsTimeAccume -= scaledFixedDeltaTime;
+									//PhysicsUpdate();
+
+
+	
 									if (tryingToRewind)
 									{
 										RestoreToTick(currentMoveTick - 1);
@@ -1018,31 +1286,60 @@ namespace PogoTAS
 									{
 										RestoreToTick(currentMoveTick + 1);
 									}
-									
-									PlayerMoveTickInfo tickInfo = playerMoveTickInfos[currentMoveTick];
 
-									PlayerStates originalState = (PlayerStates)currentState.GetValue(player);
-									currentState.SetValue(player, PlayerStates.Dead);
-									tickInfo.Apply(player, true, true);
-
-									player.PhysicsRotation = player.DesiredModelRotation;
-
-									for (int si = 0; si < currentPredTicks; si++)
+									if (recording)
 									{
-										ManualPlayerPhysicsUpdate();
-										predictedPositions[si] = player.PhysicsPosition;
+										if (viewIsAnchored)
+										{
+											currentPredTicks = maxPredictionTicks;
+										}
+										else
+										{
+											currentPredTicks = minPredictionTicks;
+										}
+
+										PlayerMoveTickInfo tickInfo = playerMoveTickInfos[currentMoveTick];
+
+										PlayerStates originalState = (PlayerStates)currentState.GetValue(player);
+										currentState.SetValue(player, PlayerStates.Dead);
+										//player.CurrentState = PlayerStates.Dead;
+
+										tickInfo.Apply(player, true, true);
+										ProtectHead();
+
+										player.PhysicsRotation = player.DesiredModelRotation;
+
+										for (int si = 0; si < currentPredTicks; si++)
+										{
+											ManualPlayerPhysicsUpdate();
+											//CallOriginalPhysicsUpdate();
+											//	Vector3 newCurrentPhysicsPosition = (playerOrbSafeMovers.TargetPositionIsLocal ? playerOrbSafeMovers.transform.parent.TransformPoint(playerOrbSafeMovers.TargetPosition) : playerOrbSafeMovers.TargetPosition);
+											//	playerOrbSafeMovers.PhysicsMoveTo(player.PhysicsPosition);
+
+											predictedPositions[si] = player.PhysicsPosition;
+
+											//if (player.CurrentState == PlayerStates.Dead) // idk how deaths are called
+											//{
+											//	currentPredTicks = si + 1;
+											//	break;
+											//}
+										}
+
+										tickInfo.Apply(player, true, true);
+
+										currentState.SetValue(player, originalState);
 									}
-
-									tickInfo.Apply(player, true, true);
-
-									currentState.SetValue(player, originalState);
+									//player.CurrentState = originalState;
 								}
 							}
+							//Time.timeScale = 0f;
 
 						}
 						else
 						{
 							Time.timeScale = 1f;
+
+							currentPredTicks = minPredictionTicks;
 
 							if (wasPaused)
 							{
@@ -1107,7 +1404,7 @@ namespace PogoTAS
 		public override void OnGUI()
 		{
 			base.OnGUI();
-			if (PogoGameManager.PogoInstance != null)
+			if (PogoGameManager.PogoInstance != null && recording)
 			{
 				//return;
 
@@ -1122,6 +1419,10 @@ namespace PogoTAS
 					{
 						GUI.Label(new Rect(100, 100, 1000, 100), $"CurrentCheckpoint.Id: {PogoGameManager.PogoInstance.CurrentCheckpoint.Id}", GUI.skin.label);
 					}*/
+
+				//int alcams = Camera.allCameras.Length;
+				//GUI.Label(new Rect(100, 60, 1000, 100), $"alcams: {alcams}", GUI.skin.label);
+
 				string tasMode = recording ? "RecordingMode" : "PlayBackMode";
 				GUI.Label(new Rect(100, 80, 1000, 100), $"currentMode: {tasMode}", GUI.skin.label);
 				GUI.Label(new Rect(100, 100, 1000, 100), $"manualPaused: {manualPaused}", GUI.skin.label);
@@ -1142,6 +1443,10 @@ namespace PogoTAS
 				GUI.Label(new Rect(100, 320, 1000, 100), $" D = ForwardsInTime", GUI.skin.label);
 				GUI.Label(new Rect(100, 340, 1000, 100), $" M = (When in PlayBackMode) goto Beginning", GUI.skin.label);
 				GUI.Label(new Rect(100, 360, 1000, 100), $" F = (When in RecordingMode and Paused) do long Prediction", GUI.skin.label);
+
+				//GUI.Label(new Rect(100, 380, 1000, 100), $"radius: {CapsuleRadius}", GUI.skin.label);
+				//GUI.Label(new Rect(100, 400, 1000, 100), $"height: {CapsuleHeight}", GUI.skin.label);
+				//GUI.Label(new Rect(100, 420, 1000, 100), $"offset: {CapsuleYOffset}", GUI.skin.label);
 				/*	GUI.Label(new Rect(100, 220, 1000, 100), $"rotationWaypointerCount: {rotationWaypointerCount}", GUI.skin.label);
 					GUI.Label(new Rect(100, 240, 1000, 100), $"rotaterCount: {rotaterCount}", GUI.skin.label);
 					GUI.Label(new Rect(100, 260, 1000, 100), $"vectorPhysicsTimeWaypointerCount: {vectorPhysicsTimeWaypointerCount}", GUI.skin.label);
@@ -1168,26 +1473,41 @@ namespace PogoTAS
 					PaintMaterial.SetPass(0);
 
 					//DrawStuffs(allOrbSafeMovers, new Color32(255, 255, 255, 255));
-				/*	DrawStuffs(allVectorPhysicsTimeWaypointers, 20, 20, new Color32(255, 255, 255, 255));
+					/*	DrawStuffs(allVectorPhysicsTimeWaypointers, 20, 20, new Color32(255, 255, 255, 255));
 
-					DrawStuffs(allPositionWaypointers, 10, 10, new Color32(255, 0, 0, 255));
+						DrawStuffs(allPositionWaypointers, 10, 10, new Color32(255, 0, 0, 255));
 
-					DrawStuffs(allMovingPlatformControllers, 30, 30, new Color32(0, 255, 0, 255));
+						DrawStuffs(allMovingPlatformControllers, 30, 30, new Color32(0, 255, 0, 255));
 
-					DrawStuffs(allOrbSafeMovers, 40, 40, new Color32(0, 0, 255, 255));
-					DrawStuffs(allLocalPositionWaypointer, 50, 50, new Color32(255, 0, 255, 255));
-					DrawStuffs(allRotaters, 60, 60, new Color32(255, 255, 0, 255));*/
+						DrawStuffs(allOrbSafeMovers, 40, 40, new Color32(0, 0, 255, 255));
+						DrawStuffs(allLocalPositionWaypointer, 50, 50, new Color32(255, 0, 255, 255));
+						DrawStuffs(allRotaters, 60, 60, new Color32(255, 255, 0, 255));*/
 
-					for (int si = 1; si < currentPredTicks; si++)
+
+					/*for (int ci = 1; ci < Camera.allCamerasCount; ci++)
 					{
-						Vector3 w2s = Draw.WorldToScreen(predictedPositions[si]);
-						Vector3 oldW2s = Draw.WorldToScreen(predictedPositions[si - 1]);
-						if (w2s.z > 0f && oldW2s.z > 0f)
-						{
-							Draw.Line(w2s.x, w2s.y, oldW2s.x, oldW2s.y, new Color32(255, 255, 255, 255));
-							//Draw.FilledRect(w2s.x - 20, w2s.y - 20, 40, 40, new Color32(255, 0, 0, 255));
-						}
 						
+						Vector3 w2s = Draw.WorldToScreen(Camera.allCameras[ci].gameObject.transform.position + Camera.allCameras[ci].gameObject.transform.rotation * Vector3.forward);
+						if (w2s.z > 0f)
+						{
+							GUI.Label(new Rect(w2s.x, w2s.y, 1000, 100), $"ci: {ci}", GUI.skin.label);
+							Draw.FilledRect(w2s.x - 20, w2s.y - 20, 40, 40, new Color32(255, 0, 0, 255));
+						}
+					}*/
+
+					if (currentPredTicks > 1)
+					{
+						for (int si = 1; si < currentPredTicks; si++)
+						{
+							Vector3 w2s = Draw.WorldToScreen(predictedPositions[si]);
+							Vector3 oldW2s = Draw.WorldToScreen(predictedPositions[si - 1]);
+							if (w2s.z > 0f && oldW2s.z > 0f)
+							{
+								Draw.Line(w2s.x, w2s.y, oldW2s.x, oldW2s.y, new Color32(255, 255, 255, 255));
+								//Draw.FilledRect(w2s.x - 20, w2s.y - 20, 40, 40, new Color32(255, 0, 0, 255));
+							}
+
+						}
 					}
 
 				/*	if (debugPoints != null && debugPoints.Count > 0)
